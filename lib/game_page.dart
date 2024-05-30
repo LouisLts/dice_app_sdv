@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GamePage extends StatefulWidget {
   final int numberOfPlayers;
@@ -27,35 +28,10 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   late Animation<double> _bubbleAnimation;
   final List<Offset> _bubblePositions = [];
 
-  void _showRulesDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Règles du Bubble 421'),
-          content: const Text(
-            'Le but du jeu est d\'être le premier joueur à atteindre 3 points.\n\n'
-            '- Chaque joueur bubble-lance 3 dés.\n'
-            '- Si vous obtenez la combinaison 4, 2 et 1 (dans n\'importe quel ordre), vous marquez un point.\n'
-            '- Si vous obtenez un ou plusieurs 6, vous devez les bubble-relancer.\n'
-            '- Le premier joueur à 3 points bubble-gagne la partie.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Fermer'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   void initState() {
     super.initState();
+    _loadGame();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
@@ -93,6 +69,32 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  void _showRulesDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Règles du Bubble 421'),
+          content: const Text(
+            'Le but du jeu est d\'être le premier joueur à atteindre 3 points.\n\n'
+            '- Chaque joueur bubble-lance 3 dés.\n'
+            '- Si vous obtenez la combinaison 4, 2 et 1 (dans n\'importe quel ordre), vous marquez un point.\n'
+            '- Si vous obtenez un ou plusieurs 6, vous devez les bubble-relancer.\n'
+            '- Le premier joueur à 3 points bubble-gagne la partie.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Fermer'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _rollDice() {
     setState(() {
       _isAnimating = true;
@@ -106,6 +108,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
           _nextPlayer();
         }
         _isAnimating = false;
+        _saveGame();
       });
     });
   }
@@ -124,6 +127,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         _checkWinningCombination();
         _checkSixes();
         _isAnimating = false;
+        _saveGame();
       });
     });
   }
@@ -175,12 +179,14 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
       _player2Score = 0;
       _bubblePositions.clear();
     });
+    _saveGame();
   }
 
   void _continueGame() {
     setState(() {
       _isWinningRound = false;
     });
+    _saveGame();
   }
 
   void _debugWinningMove() {
@@ -188,6 +194,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
       _diceValues = [4, 2, 1];
       _checkWinningCombination();
     });
+    _saveGame();
   }
 
   void _startBubbleAnimation() {
@@ -212,6 +219,34 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _saveGame() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        'diceValues', _diceValues.map((value) => value.toString()).toList());
+    await prefs.setInt('currentPlayer', _currentPlayer);
+    await prefs.setInt('player1Score', _player1Score);
+    await prefs.setInt('player2Score', _player2Score);
+    await prefs.setBool('isGameOver', _isGameOver);
+    await prefs.setBool('hasSixes', _hasSixes);
+    await prefs.setBool('isWinningRound', _isWinningRound);
+  }
+
+  Future<void> _loadGame() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? savedDiceValues = prefs.getStringList('diceValues');
+    if (savedDiceValues != null) {
+      setState(() {
+        _diceValues = savedDiceValues.map((value) => int.parse(value)).toList();
+        _currentPlayer = prefs.getInt('currentPlayer') ?? 1;
+        _player1Score = prefs.getInt('player1Score') ?? 0;
+        _player2Score = prefs.getInt('player2Score') ?? 0;
+        _isGameOver = prefs.getBool('isGameOver') ?? false;
+        _hasSixes = prefs.getBool('hasSixes') ?? false;
+        _isWinningRound = prefs.getBool('isWinningRound') ?? false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final int numberOfPlayers = widget.numberOfPlayers;
@@ -224,6 +259,14 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
           IconButton(
             icon: const Icon(Icons.help),
             onPressed: () => _showRulesDialog(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _saveGame,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadGame,
           ),
         ],
       ),
@@ -244,9 +287,10 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                   Text(
                     'Bubble-Joueur $_currentPlayer',
                     style: const TextStyle(
-                        fontSize: 28,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold),
+                      fontSize: 28,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Row(
